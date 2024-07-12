@@ -18,7 +18,7 @@ import (
 	"github.com/cecobask/imdb-trakt-sync/pkg/logger"
 )
 
-func buildTestTraktClient(config traktConfig) TraktClientInterface {
+func buildTestTraktClient(config traktConfig) *TraktClient {
 	return &TraktClient{
 		client: &http.Client{
 			Transport: httpmock.DefaultTransport,
@@ -168,6 +168,25 @@ func TestTraktClient_doRequest(t *testing.T) {
 					requirements.Equal(dummyRequestFields.Endpoint, r.URL.Path)
 					w.Header().Set(traktHeaderKeyRetryAfter, "0")
 					w.WriteHeader(http.StatusTooManyRequests)
+				}
+				return httptest.NewServer(http.HandlerFunc(handler))
+			},
+			assertions: func(assertions *assert.Assertions, res *http.Response, err error) {
+				assertions.Nil(res)
+				assertions.Error(err)
+				assertions.Contains(err.Error(), "reached max retry attempts")
+			},
+		},
+		{
+			name: "handle retryable status",
+			args: args{
+				requestFields: dummyRequestFields,
+			},
+			requirements: func(requirements *require.Assertions) *httptest.Server {
+				handler := func(w http.ResponseWriter, r *http.Request) {
+					requirements.Equal(dummyRequestFields.Method, r.Method)
+					requirements.Equal(dummyRequestFields.Endpoint, r.URL.Path)
+					w.WriteHeader(http.StatusBadGateway)
 				}
 				return httptest.NewServer(http.HandlerFunc(handler))
 			},
@@ -2222,7 +2241,7 @@ func TestTraktClient_Hydrate(t *testing.T) {
 			defer httpmock.DeactivateAndReset()
 			tt.requirements()
 			c := buildTestTraktClient(dummyConfig)
-			err := c.Hydrate()
+			err := c.hydrate()
 			tt.assertions(assert.New(t), err)
 		})
 	}
